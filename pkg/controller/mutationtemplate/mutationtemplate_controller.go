@@ -16,9 +16,11 @@ limitations under the License.
 package mutationtemplate
 
 import (
+	"fmt"
 	"context"
-
-	templatesv1alpha1 "github.com/open-policy-agent/frameworks/constraint/pkg/apis/templates/v1alpha1"
+	"k8s.io/apimachinery/pkg/types"
+	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
+	"github.com/open-policy-agent/frameworks/constraint/pkg/apis/templates/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -28,12 +30,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 )
 
 /**
 * USER ACTION REQUIRED: This is a scaffold file intended for the user to modify with their own Controller
 * business logic.  Delete these comments after modifying this file.*
  */
+
+var log = logf.Log.WithName("controller").WithValues("kind", "MutationTemplate")
 
 // Add creates a new MutationTemplate Controller and adds it to the Manager with default RBAC. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
@@ -55,7 +60,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	}
 
 	// Watch for changes to MutationTemplate
-	err = c.Watch(&source.Kind{Type: &templatesv1alpha1.MutationTemplate{}}, &handler.EnqueueRequestForObject{})
+	err = c.Watch(&source.Kind{Type: &v1alpha1.MutationTemplate{}}, &handler.EnqueueRequestForObject{})
 	if err != nil {
 		return err
 	}
@@ -64,7 +69,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	// Uncomment watch a Deployment created by MutationTemplate - change this for objects you create
 	err = c.Watch(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForOwner{
 		IsController: true,
-		OwnerType:    &templatesv1alpha1.MutationTemplate{},
+		OwnerType:    &v1alpha1.MutationTemplate{},
 	})
 	if err != nil {
 		return err
@@ -89,7 +94,7 @@ type ReconcileMutationTemplate struct {
 // +kubebuilder:rbac:groups=templates.gatekeeper.sh,resources=mutationtemplates/status,verbs=get;update;patch
 func (r *ReconcileMutationTemplate) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	// Fetch the MutationTemplate instance
-	instance := &templatesv1alpha1.MutationTemplate{}
+	instance := &v1alpha1.MutationTemplate{}
 	err := r.Get(context.TODO(), request.NamespacedName, instance)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -101,5 +106,27 @@ func (r *ReconcileMutationTemplate) Reconcile(request reconcile.Request) (reconc
 		return reconcile.Result{}, err
 	}
 
+	if instance.GetDeletionTimestamp().IsZero() {
+                // Check if the constraint already exists
+                found := &apiextensionsv1beta1.CustomResourceDefinition{}
+                err = r.Get(context.TODO(), types.NamespacedName{Name: "foo"}, found)
+                if err != nil && errors.IsNotFound(err) {
+                        return r.handleCreate(instance)
+                }
+	}
+
 	return reconcile.Result{}, nil
 }
+func (r *ReconcileMutationTemplate) handleCreate(
+        instance *v1alpha1.MutationTemplate) (reconcile.Result, error) {
+        log := log.WithValues("test-mt-controller", "log-init")
+        log.Info("entered handle create - creating a kube mutation CRD object from a supplied go CRD starts here\n")
+	log.Info("the MutationTemplate looks like:\n")
+	log.Info(fmt.Sprintf("+%v",instance))
+	instance.Status.Created = true
+        if err := r.Update(context.Background(), instance); err != nil {
+                return reconcile.Result{Requeue: true}, nil
+        }
+        return reconcile.Result{}, nil
+}
+
